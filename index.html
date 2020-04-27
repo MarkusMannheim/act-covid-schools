@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <!-- Google Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-155991615-1"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'UA-155991615-1');
+    </script>
+    <!-- my stuff -->
+    <meta charset="utf-8">
+    <title>ACT hub schools</title>
+    <meta name="description" content="The ACT's 'hub' public schools that providing supervised classes.">
+    <meta name="keywords" content="canberra, act, schools, public, open, hub, covid19, coronavirus">
+    <meta name="author" content="Markus Mannheim">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Initial scripts -->
+    <script src="https://d3js.org/d3.v4.min.js"></script>
+    <script src="https://api.tiles.mapbox.com/mapbox-gl-js/v1.5.0/mapbox-gl.js"></script>
+    <link href="https://api.tiles.mapbox.com/mapbox-gl-js/v1.5.0/mapbox-gl.css" rel="stylesheet">
+    <link href="./resources/style.css" rel="stylesheet">
+    <link href="./resources/abcLogo64.png" rel="icon">
+  </head>
+  <body>
+    <!-- Initial page layout -->
+    <div id="map"></div>
+    <div id="tip"></div>
+    <script>
+      // load data
+      d3.csv("./resources/schools.csv", function(error, data) {
+        if (error) throw error;
+        // format data
+        schoolData = data
+          .map(function(d) {
+            return {
+              type: "Feature",
+              geometry: {
+                type: "Point",
+                coordinates: [+d.lng, +d.lat]
+              },
+              properties: {
+                name: d.school,
+                type: d.type
+              }
+            };
+          });
+        // set up MapBox engine
+        mapboxgl.accessToken = "pk.eyJ1IjoibmV3cy1vbjFpbmUiLCJhIjoiR3FlZFZlVSJ9._30EFE9XYhQitqf4gzRG-g";
+        map = new mapboxgl.Map({
+          container: "map",
+          style: "mapbox://styles/mapbox/light-v10",
+          center: [149.126944, -35.293056],
+          attributionControl: false,
+          zoom: 10,
+          minZoom: 8,
+          maxZoom: 12,
+          pitchWithRotate: false,
+          dragRotate: false,
+          touchZoomRotate: false
+        });
+        // add navigation and custom attribution
+        map.addControl(new mapboxgl.AttributionControl({
+            compact: true
+          }))
+          .addControl(new mapboxgl.NavigationControl({
+            showCompass: false
+          }));
+        // tooltip
+        tip = d3.select("#tip");
+        // svg layer
+        container = map.getCanvasContainer();
+        svg = d3.select(container)
+          .append("svg")
+            .attr("id", "svg");
+        svgGroup = svg
+          .append("g")
+            .attr("id", "svgGroup");
+        voronoi = d3.voronoi()
+          .x(function(d) { return projection(d.geometry.coordinates)[0]; })
+          .y(function(d) { return projection(d.geometry.coordinates)[1]; });
+        // if window is resized
+        window.addEventListener("resize", windowResize);
+        windowResize();
+        // map calculations
+        projection = calcProjection();
+        path = d3.geoPath();
+        // draw areas
+        cells = svgGroup
+          .selectAll(".cell")
+            .data(voronoi.polygons(schoolData))
+          .enter().append("g")
+            .classed("cell", true);
+        cells.append("path")
+          .classed("voronoi", true);
+        cells.select(".voronoi")
+          .on("mouseover", mouseover)
+          .on("mouseout", mouseout);
+        schools = cells
+          .append("path")
+            .attr("class", function(d) { return d.data.properties.type; })
+            .classed("school", true);
+        // initial set-up
+        map.fitBounds(d3.geoBounds({type: "FeatureCollection", features: schoolData}), {
+          padding: margin
+        });
+        // re-render SVGs upon movement
+        map.on("viewreset", render)
+          .on("move", render)
+          .on("move", render);
+        render();
+      });
+      // re-renders SVG when map moves
+      function render() {
+        tip.style("opacity", 0);
+        projection = calcProjection();
+        path.projection(projection);
+        cells.select(".voronoi")
+          .attr("d", function(d) { return d3.line()(d) + "Z"; });
+        schools.attr("d", function(d) { return path.pointRadius(d.data.properties.type == "special" ? 7.5 : 12.5)(d.data); });
+      }
+      // recalculates D3 map projection when map moves
+      function calcProjection() {
+        bbox = document.body.getBoundingClientRect();
+        center = map.getCenter();
+        zoom = map.getZoom();
+        scale = 256 / Math.PI * Math.pow(2, zoom);
+        return d3.geoMercator()
+          .center([center.lng, center.lat])
+          .translate([bbox.width / 2, bbox.height / 2])
+          .scale(scale);
+      }
+      // if window is resized
+      function windowResize() {
+        width = svg.node().getBoundingClientRect().width;
+        height = svg.node().getBoundingClientRect().height;
+        margin = width < 500 ?
+          { top: 32, bottom: 32, left: 32, right: 32 } :
+          { top: 64, bottom: 64, left: 64, right: 64 };
+        voronoi.size([width, height]);
+      }
+      function mouseover(d) {
+        centroid = projection(this.parentNode.querySelector(".school").__data__.data.geometry.coordinates);
+        tip.style("opacity", 0)
+          .style("top", "0px") // reset position to tool tip for correct sizing
+          .style("left", "0px")
+          .html("<h1>" + d.data.properties.name + "</h1>" // re-write tool tip content
+              + "<p>" + d.data.properties.type + " school</p>");
+        // set location of tool tip to ensure it's always inside chart
+        let tipWidth = parseFloat(tip.style("width"));
+        let tipHeight = parseFloat(tip.style("height"));
+        tip.style("top", function() {
+            return centroid[1] + (tipHeight / 2) + 10 > height - margin.bottom ?
+              (height - margin.bottom - (tipHeight / 2) - 10) + "px":
+              centroid[1] - (tipHeight / 2) - 10 < margin.top ?
+              (margin.top + 10) + "px":
+              centroid[1] - (tipHeight / 2) + "px";
+          })
+          .style("left", function() {
+            return centroid[0] + (tipWidth / 2) + 10 > width - margin.right ?
+              (width - margin.right - (tipWidth / 2) - 10) + "px":
+              centroid[0] - (tipWidth / 2) - 10 < margin.left ?
+              (margin.left + 10) + "px":
+              centroid[0] - (tipWidth / 2) + "px";
+          })
+          .style("opacity", 1);
+      }
+      function mouseout() {
+        tip.style("opacity", 0);
+      }
+    </script>
+  </body>
+</html>
