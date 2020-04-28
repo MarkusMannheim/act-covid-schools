@@ -50,6 +50,9 @@ body {
 .special {
   fill: #00B395;
 }
+.school.selected {
+  fill: white;
+}
 #tip {
   position: absolute;
   opacity: 0;

@@ -53,7 +53,7 @@
           style: "mapbox://styles/mapbox/light-v10",
           center: [149.126944, -35.293056],
           attributionControl: false,
-          zoom: 10,
+          zoom: 5,
           minZoom: 8,
           maxZoom: 12,
           pitchWithRotate: false,
@@ -86,22 +86,23 @@
         // map calculations
         projection = calcProjection();
         path = d3.geoPath();
-        // draw areas
+        // set up SVGs
+        console.log(voronoi.polygons(schoolData));
         cells = svgGroup
           .selectAll(".cell")
             .data(voronoi.polygons(schoolData))
           .enter().append("g")
             .classed("cell", true);
         cells.append("path")
-          .classed("voronoi", true);
-        cells.select(".voronoi")
+          .classed("voronoi", true)
           .on("mouseover", mouseover)
-          .on("mouseout", mouseout);
+          .on("mouseout", mouseout)
+          .on("touchend", mouseover);
         schools = cells
           .append("path")
             .attr("class", function(d) { return d.data.properties.type; })
             .classed("school", true);
-        // initial set-up
+        // initial positioning
         map.fitBounds(d3.geoBounds({type: "FeatureCollection", features: schoolData}), {
           padding: margin
         });
@@ -113,12 +114,14 @@
       });
       // re-renders SVG when map moves
       function render() {
-        tip.style("opacity", 0);
+        mouseout();
         projection = calcProjection();
         path.projection(projection);
-        cells.select(".voronoi")
-          .attr("d", function(d) { return d3.line()(d) + "Z"; });
+        // draw SVGs
+        cells.data(voronoi.polygons(schoolData));
         schools.attr("d", function(d) { return path.pointRadius(d.data.properties.type == "special" ? 7.5 : 12.5)(d.data); });
+        cells.select(".voronoi")
+          .attr("d", function(d) { return d ? d3.line()(d) + "Z" : null; });
       }
       // recalculates D3 map projection when map moves
       function calcProjection() {
@@ -141,7 +144,8 @@
         voronoi.size([width, height]);
       }
       function mouseover(d) {
-        centroid = projection(this.parentNode.querySelector(".school").__data__.data.geometry.coordinates);
+        this.parentNode.querySelector(".school").classList.add("selected");
+        centroid = projection(this.__data__.data.geometry.coordinates);
         tip.style("opacity", 0)
           .style("top", "0px") // reset position to tool tip for correct sizing
           .style("left", "0px")
@@ -151,22 +155,21 @@
         let tipWidth = parseFloat(tip.style("width"));
         let tipHeight = parseFloat(tip.style("height"));
         tip.style("top", function() {
-            return centroid[1] + (tipHeight / 2) + 10 > height - margin.bottom ?
-              (height - margin.bottom - (tipHeight / 2) - 10) + "px":
-              centroid[1] - (tipHeight / 2) - 10 < margin.top ?
-              (margin.top + 10) + "px":
-              centroid[1] - (tipHeight / 2) + "px";
+            return centroid[1] + tipHeight + 32 > height ?
+              (centroid[1] - tipHeight - 32) + "px":
+              (centroid[1] + 16) + "px";
           })
           .style("left", function() {
-            return centroid[0] + (tipWidth / 2) + 10 > width - margin.right ?
-              (width - margin.right - (tipWidth / 2) - 10) + "px":
-              centroid[0] - (tipWidth / 2) - 10 < margin.left ?
-              (margin.left + 10) + "px":
-              centroid[0] - (tipWidth / 2) + "px";
+            return centroid[0] + (tipWidth / 2) + 16 > width ?
+              (width - tipWidth - 16) + "px" :
+              centroid[0] - (tipWidth / 2) - 16 < 0 ?
+              "16px" :
+              (centroid[0] - (tipWidth / 2)) + "px";
           })
           .style("opacity", 1);
       }
       function mouseout() {
+        schools.classed("selected", false);
         tip.style("opacity", 0);
       }
     </script>
